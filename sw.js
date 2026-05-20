@@ -1,33 +1,14 @@
-const CACHE_NAME = 'asset-tracker-v1'
+const CACHE_NAME = 'asset-tracker-v2'
 
-const PRECACHE_URLS = [
-  '/',
-  '/manifest.json',
-  '/icons/icon-192.svg',
-  '/icons/icon-512.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/apple-touch-icon.png',
-]
-
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(PRECACHE_URLS)
-    })
-  )
+self.addEventListener('install', () => {
   self.skipWaiting()
 })
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
-      )
-    })
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
   )
   self.clients.claim()
 })
@@ -35,19 +16,22 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return
 
-  event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fetchPromise = fetch(event.request).then((response) => {
-        if (response && response.status === 200) {
-          const clone = response.clone()
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, clone)
-          })
-        }
-        return response
-      }).catch(() => cached)
+  const url = new URL(event.request.url)
+  const isAsset = /\.(js|css|png|svg|ico|woff2?)$/.test(url.pathname)
+  const isHtml = url.pathname.endsWith('/') || url.pathname.endsWith('/index.html')
 
-      return cached || fetchPromise
-    })
-  )
+  if (isAsset || isHtml) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        const fetched = fetch(event.request).then((res) => {
+          if (res.status === 200) {
+            const clone = res.clone()
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone))
+          }
+          return res
+        })
+        return cached || fetched
+      })
+    )
+  }
 })
